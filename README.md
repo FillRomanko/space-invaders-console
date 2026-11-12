@@ -1,7 +1,6 @@
 ﻿**Русский** | <a href="#Eng">[English]</a>
 
-# Space Invaders (Console Edition)
-<div id="Rus"></div>
+# <div id="Rus">Space Invaders (Console Edition)</div>
 Консольная реализация классической аркадной игры Space Invaders с элементами современных механик (динамическая сложность, система сохранений).
 
 ## Цель проекта
@@ -34,8 +33,7 @@
 
 <a href="#Rus">[Русский]</a> | **English**
 
-# Space Invaders (Console Edition)
-<div id="Eng"></div>
+# <div id="Eng">Space Invaders (Console Edition)</div>
 A console implementation of the classic arcade game Space Invaders with elements of modern mechanics (dynamic difficulty, save system).
 
 ## Project Goal
