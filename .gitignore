@@ -7,6 +7,22 @@
 *.o
 *.obj
 
+# IDE
+.idea/
+.vs/
+.vscode/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.sln.docstates
+
+# Build folders
+*-debug/
+*-Debug/
+*-release/
+*-Release/
+
 # Precompiled Headers
 *.gch
 *.pch
