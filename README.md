@@ -1,6 +1,7 @@
 ﻿**Русский** | <a href="#Eng">[English]</a>
+<div id="Rus"></div>
 
-# <div id="Rus">Space Invaders (Console Edition)</div>
+# Space Invaders (Console Edition)
 Консольная реализация классической аркадной игры Space Invaders с элементами современных механик (динамическая сложность, система сохранений).
 
 ## Цель проекта
@@ -30,16 +31,17 @@
     cmake .. -G "Visual Studio 17 2022" # или "MinGW Makefiles"
     cmake --build . --config Release
     ```
-
+    
 <a href="#Rus">[Русский]</a> | **English**
+<div id="Eng"></div>
 
-# <div id="Eng">Space Invaders (Console Edition)</div>
+# Space Invaders (Console Edition)
 A console implementation of the classic arcade game Space Invaders with elements of modern mechanics (dynamic difficulty, save system).
 
 ## Project Goal
 To create a high-performance console game using exclusively the Windows API (Win32), without third-party libraries or STL containers, with a strict memory limit and asynchronous control.
 
-## 🛠️ Tech Stack and Limitations
+## Tech Stack and Limitations
 * **Language**: C++
 * **Platform**: Windows (x64)
 * **API**: Win32 (Windows API). **Prohibited**: Any third-party libraries, STL containers (`std::vector`, `std::string`, `std::map`, etc.).
@@ -48,14 +50,14 @@ To create a high-performance console game using exclusively the Windows API (Win
 * **Sound**: Playback via `PlaySound` (WinMM) for .wav files.
 * **Saving**: File I/O via `CreateFile` / `WriteFile` (Win32 API) for autosaving and highscores.
 
-## 🎮 Game Mechanics
+## Game Mechanics
 * **Two modes**: "Free Flight" (ship health) and "Defense" (different ship and base health).
 * **Dynamic Difficulty**: Enemy spawn rate adapts to player performance and gradually increases.
 * **Scoring System**: For surviving and eliminating enemies.
 * **Pause and Autosave**: Automatically saves the state once per second.
 * **Highscore**: Saved between sessions.
 
-## 🚀 Build and Run
+## Build and Run
 1. **Requirements**: MSVC (Visual Studio) or MinGW-w64 compiler, CMake 3.15+.
 2. **Build**:
 ```bash
