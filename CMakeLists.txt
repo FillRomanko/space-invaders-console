@@ -73,9 +73,6 @@ else()
     endif()
 endif()
 
-# ============================================================================
-# Common (platform-agnostic) sources
-# ============================================================================
 set(COMMON_SOURCES
         src/main.cpp
         src/utils/console_utils.cpp
@@ -94,8 +91,8 @@ set(PLATFORM_INCLUDE_DIRS "")
 if(WIN32)
     message(STATUS "Configuring for Windows (Win32 backend)")
     list(APPEND PLATFORM_SOURCES
-            #src/platform/win32/InputWin32.cpp
-            #src/platform/win32/RendererWin32.cpp
+            include/platform/win32/console_utils_win32.h
+            src/platform/win32/console_utils_win32.cpp
             #src/platform/win32/TimerWin32.cpp
             #src/platform/win32/RawMemoryWin32.cpp
             #src/platform/audio/AudioWin32.cpp
@@ -105,11 +102,8 @@ if(WIN32)
 elseif(APPLE)
     message(STATUS "Configuring for macOS (POSIX backend)")
     list(APPEND PLATFORM_SOURCES
-            #src/platform/posix/InputPosix.cpp
-            #src/platform/posix/RendererPosix.cpp
-            #src/platform/posix/TimerPosix.cpp
-            #src/platform/posix/RawMemoryPosix.cpp
-            #src/platform/audio/AudioMacOS.cpp
+            src/platform/posix/console_utils_posix.cpp
+            Include/platform/posix/console_utils_posix.h
     )
     find_library(CORE_AUDIO_LIB      CoreAudio      REQUIRED)
     find_library(AUDIO_TOOLBOX_LIB   AudioToolbox   REQUIRED)
@@ -127,11 +121,8 @@ elseif(APPLE)
 elseif(UNIX)
     message(STATUS "Configuring for Linux (POSIX backend)")
     list(APPEND PLATFORM_SOURCES
-            #src/platform/posix/InputPosix.cpp
-            #src/platform/posix/RendererPosix.cpp
-            #src/platform/posix/TimerPosix.cpp
-            #src/platform/posix/RawMemoryPosix.cpp
-            #src/platform/audio/AudioLinux.cpp
+            src/platform/posix/console_utils_posix.cpp
+            Include/platform/posix/console_utils_posix.h
     )
     find_package(Threads REQUIRED)
     list(APPEND PLATFORM_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
