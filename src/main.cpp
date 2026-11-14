@@ -1,5 +1,4 @@
 ﻿#include <iostream>
-
 #include "utils/console_utils.h"
 
 int main() {
