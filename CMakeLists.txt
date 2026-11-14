@@ -25,6 +25,7 @@ option(BUILD_TESTS          "Build unit tests"                                OF
 option(USE_NCURSES          "Use ncurses on POSIX (else raw termios)"         OFF)
 option(USE_MINI_AUDIO       "Use miniaudio single-header for audio (all OS)"  OFF)
 option(ENABLE_STRICT_WARNINGS "Enable -Werror / /WX"                          ON)
+option(STATIC_RUNTIME "Link runtime statically (standalone .exe, no DLLs)"    OFF)
 option(ENABLE_ASAN          "Enable AddressSanitizer (Debug only)"            OFF)
 option(ENABLE_STL_CHECK     "Fail build if forbidden STL containers are used" ON)
 
@@ -49,6 +50,13 @@ if(MSVC)
             UNICODE
             _UNICODE
     )
+    if(STATIC_RUNTIME)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        message(STATUS "MSVC: using static runtime (/MT, /MTd) — standalone .exe")
+    else()
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+        message(STATUS "MSVC: using dynamic runtime (/MD, /MDd) — requires VC++ Redistributable")
+    endif()
     if(ENABLE_ASAN)
         add_compile_options(/fsanitize=address)
         add_link_options(/fsanitize=address)
@@ -71,11 +79,15 @@ else()
         add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
         add_link_options(-fsanitize=address)
     endif()
+    if(WIN32 AND STATIC_RUNTIME)
+        add_link_options(-static-libgcc -static-libstdc++)
+        add_link_options(-static)
+        message(STATUS "MinGW: using static runtime (-static-libgcc -static-libstdc++ -static) — standalone .exe")
+    endif()
 endif()
 
 set(COMMON_SOURCES
         src/main.cpp
-        src/utils/console_utils.cpp
         #src/core/GameLoop.cpp
 )
 
