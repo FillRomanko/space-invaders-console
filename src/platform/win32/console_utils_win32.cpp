@@ -2,66 +2,66 @@
 #include "../../../include/utils/console_utils.h"
 
 static bool FindMaxFontSize(HANDLE hConsole, int cols, int rows,
-                            CONSOLE_FONT_INFOEX* outFont) {
-    CONSOLE_FONT_INFOEX original;
-    original.cbSize = sizeof(original);
+                            CONSOLE_FONT_INFOEX* outFont) { // ищет максимально возможный шрифт
+    CONSOLE_FONT_INFOEX original; // хранит параметры шрифта
+    original.cbSize = sizeof(original); // сохраняем оригинальный размер шрифта
     if (!GetCurrentConsoleFontEx(hConsole, FALSE, &original)) {
-        return false;
+        return false; // если не получили данные шрифта
     }
 
-    CONSOLE_FONT_INFOEX best = original;
-    bool found = false;
+    CONSOLE_FONT_INFOEX best = original; // храним лучший вариант
+    bool found = false; // вернём true, если найдём подходящий вариант
 
     int lo = 5;
     int hi = 72;
     while (lo <= hi) {
-        int mid = lo + (hi - lo) / 2;
+        int mid = lo + (hi - lo) / 2; // бинарный поиск максимально возможного шрифта
 
         CONSOLE_FONT_INFOEX test = original;
-        test.dwFontSize.Y = static_cast<SHORT>(mid);
-        test.dwFontSize.X = 0;
+        test.dwFontSize.Y = static_cast<SHORT>(mid); // меняем высоту шрифта до mid
+        test.dwFontSize.X = 0; // оставляем ширину шрифта пропорциональной высоте
 
         if (!SetCurrentConsoleFontEx(hConsole, FALSE, &test)) {
             hi = mid - 1;
-            continue;
+            continue; // если шрифт слишком большой для применения, уменьшаем верхнюю границу
         }
 
-        COORD largest = GetLargestConsoleWindowSize(hConsole);
-        if (largest.X >= cols && largest.Y >= rows) {
+        COORD largest = GetLargestConsoleWindowSize(hConsole); // получаем размер окна в символах
+        if (largest.X >= cols && largest.Y >= rows) { // если рамка меньше окна, значит подходит
             best = test;
             found = true;
             lo = mid + 1;
-        } else {
+        } else { // продолжаем поиски уменьшая ожидаемый резульатт
             hi = mid - 1;
         }
     }
 
-    if (!found) {
+    if (!found) { // не нашли, откатываем шрифт
         SetCurrentConsoleFontEx(hConsole, FALSE, &original);
         return false;
     }
 
-    SetCurrentConsoleFontEx(hConsole, FALSE, &best);
+    SetCurrentConsoleFontEx(hConsole, FALSE, &best); // меняем шрифт на найденный
     *outFont = best;
     return true;
 }
 
 bool console_utils::InitializeConsole(int cols, int rows) {
-    if (cols <= 0 || rows <= 0) {
+    if (cols <= 0 || rows <= 0) { // проверка на идиота
         return false;
     }
 
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE); // пытаемся получить хэндл вывода
     if (hConsole == INVALID_HANDLE_VALUE) {
         return false;
     }
 
     CONSOLE_FONT_INFOEX chosenFont;
-    if (!FindMaxFontSize(hConsole, cols, rows, &chosenFont)) {
+    if (!FindMaxFontSize(hConsole, cols, rows, &chosenFont)) { // ищем размер шрифта написанной выше функцией
         return false;
     }
 
-    if (!SetCurrentConsoleFontEx(hConsole, FALSE, &chosenFont)) {
+    if (!SetCurrentConsoleFontEx(hConsole, FALSE, &chosenFont)) { // устанавливаем шрифт второй раз, на случай не кооректной работы функции выше
         return false;
     }
 
@@ -71,8 +71,8 @@ bool console_utils::InitializeConsole(int cols, int rows) {
         return false;
     }
 
-    COORD largest = GetLargestConsoleWindowSize(hConsole);
-    if (!SetConsoleScreenBufferSize(hConsole, largest)) {
+    COORD largest = GetLargestConsoleWindowSize(hConsole); // смотрим максимальный размер окна в символах
+    if (!SetConsoleScreenBufferSize(hConsole, largest)) { // растягиваем буфер
         return false;
     }
 
@@ -81,25 +81,23 @@ bool console_utils::InitializeConsole(int cols, int rows) {
         static_cast<SHORT>(largest.X - 1),
         static_cast<SHORT>(largest.Y - 1)
     };
-    if (!SetConsoleWindowInfo(hConsole, TRUE, &maxWin)) {
+    if (!SetConsoleWindowInfo(hConsole, TRUE, &maxWin)) { // растягиваем видимое окно до размеров буфера
         return false;
     }
 
     HWND hwnd = GetConsoleWindow();
     if (hwnd) {
         LONG style = GetWindowLong(hwnd, GWL_STYLE);
-        style &= ~(WS_CAPTION | WS_THICKFRAME | WS_BORDER);
+        style &= ~(WS_CAPTION | WS_THICKFRAME | WS_BORDER); // убираем заголовок, верхнюю большую рамку, тонкие рамки
         SetWindowLong(hwnd, GWL_STYLE, style);
         SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED); // немедленно применяем новый стиль консоли
 
-        ShowWindow(hwnd, SW_MAXIMIZE);
-        UpdateWindow(hwnd);
+        ShowWindow(hwnd, SW_MAXIMIZE); // делаем на весь экран
+        UpdateWindow(hwnd); // принудительно перерисовываем
     }
 
-    // ВАЖНО: берём ФАКТИЧЕСКИЕ размеры видимой области консоли
-    // ПОСЛЕ максимизации. Опираться на старый largest нельзя —
-    // он был вычислен до SW_MAXIMIZE и уже не соответствует окну.
+    // получаем актуальную информацию консоли после перерисовки
     CONSOLE_SCREEN_BUFFER_INFO buffer_info;
     if (!GetConsoleScreenBufferInfo(hConsole, &buffer_info)) {
         return false;
@@ -117,7 +115,7 @@ bool console_utils::InitializeConsole(int cols, int rows) {
         COORD newBuf = {
             (buffer_info.dwSize.X > winCols) ? buffer_info.dwSize.X : winCols,
             (buffer_info.dwSize.Y > winRows) ? buffer_info.dwSize.Y : winRows
-        };
+        }; // новый буфер либо как был раньше, либо стал больше
         if (!SetConsoleScreenBufferSize(hConsole, newBuf)) {
             return false;
         }
@@ -145,7 +143,7 @@ bool console_utils::InitializeConsole(int cols, int rows) {
     SHORT baseY = buffer_info.srWindow.Top;
 
     DWORD written = 0;
-    // --- ВЕРХНЯЯ ЛИНИЯ ---
+    // рисуем верхнюю линию
     for (int x = 0; x < cols; ++x) {
         COORD posT = {
             static_cast<SHORT>(baseX + offsetX + x),
@@ -167,7 +165,7 @@ bool console_utils::InitializeConsole(int cols, int rows) {
     };
     FillConsoleOutputCharacterA(hConsole, '+', 1, cornerTR, &written);
 
-    for (int y = 1; y < rows; ++y) {
+    for (int y = 1; y < rows; ++y) { // рисуем боковые части рамки
         COORD posL = {
             static_cast<SHORT>(baseX + offsetX),
             static_cast<SHORT>(baseY + offsetY + y)
@@ -180,7 +178,7 @@ bool console_utils::InitializeConsole(int cols, int rows) {
         };
         FillConsoleOutputCharacterA(hConsole, '|', 1, posR, &written);
     }
-    for (int x = 0; x < cols; ++x) {
+    for (int x = 0; x < cols; ++x) { // рисуем низ
         COORD posB = {
             static_cast<SHORT>(baseX + offsetX + x),
             static_cast<SHORT>(baseY + offsetY + rows - 1)
@@ -188,7 +186,7 @@ bool console_utils::InitializeConsole(int cols, int rows) {
         FillConsoleOutputCharacterA(hConsole, '-', 1, posB, &written);
     }
 
-    COORD cornerBL = {
+    COORD cornerBL = { // заменяем углы на плюсы внизу
         static_cast<SHORT>(baseX + offsetX),
         static_cast<SHORT>(baseY + offsetY + rows - 1)
     };
