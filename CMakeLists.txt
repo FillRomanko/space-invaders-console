@@ -78,10 +78,12 @@ endif()
 # ============================================================================
 set(COMMON_SOURCES
         src/main.cpp
+        src/utils/console_utils.cpp
         #src/core/GameLoop.cpp
 )
 
 set(COMMON_HEADERS
+        Include/utils/console_utils.h
         #include/core/GameLoop.h
 )
 
