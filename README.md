@@ -12,7 +12,7 @@
 *   **Платформа**: Windows (x64)
 *   **API**: Win32 (Windows API). **Запрещено**: Любые сторонние библиотеки, STL-контейнеры (`std::vector`, `std::string`, `std::map` и др.).
 *   **Управление памятью**: **Критическое ограничение — 2 МБ** для всех переменных игры.
-*   **Ввод/Вывод**: Асинхронный ввод через `ReadConsoleInput` / `PeekConsoleInput` (без блокировки основного потока). Рендеринг с двойной буферизацией (`CreateConsoleScreenBuffer`) для стабильных 24+ FPS.
+*   **Ввод/Вывод**: Асинхронный ввод через `ReadConsoleInput` / `PeekConsoleInput` (без блокировки основного потока). Рендеринг с двойной буферизацией (`CreateConsoleScreenBuffer`) для ровных 60 FPS.
 *   **Звук**: Воспроизведение через `PlaySound` (WinMM) для .wav файлов.
 *   **Сохранение**: Файловый ввод/вывод через `CreateFile` / `WriteFile` (Win32 API) для автосохранения и таблицы рекордов.
 
@@ -46,7 +46,7 @@ To create a high-performance console game using exclusively the Windows API (Win
 * **Platform**: Windows (x64)
 * **API**: Win32 (Windows API). **Prohibited**: Any third-party libraries, STL containers (`std::vector`, `std::string`, `std::map`, etc.).
 * **Memory Management**: **Critical limit - 2 MB** for all game variables.
-* **Input/Output**: Asynchronous input via `ReadConsoleInput` / `PeekConsoleInput` (without blocking the main thread). Double-buffered rendering (`CreateConsoleScreenBuffer`) for a stable 24+ FPS.
+* **Input/Output**: Asynchronous input via `ReadConsoleInput` / `PeekConsoleInput` (without blocking the main thread). Double-buffered rendering (`CreateConsoleScreenBuffer`) for a perfect 60 FPS.
 * **Sound**: Playback via `PlaySound` (WinMM) for .wav files.
 * **Saving**: File I/O via `CreateFile` / `WriteFile` (Win32 API) for autosaving and highscores.
 
