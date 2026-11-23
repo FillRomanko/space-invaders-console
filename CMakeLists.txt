@@ -88,12 +88,27 @@ endif()
 
 set(COMMON_SOURCES
         src/main.cpp
-        #src/core/GameLoop.cpp
+        src/core/renderer.cpp
+        src/core/input.cpp
+        src/core/audio.cpp
+        src/core/game.cpp
+        src/core/menu.cpp
+        src/core/save_system.cpp
+        src/core/leaderboard.cpp
+        src/core/sprites.cpp
 )
 
 set(COMMON_HEADERS
         Include/utils/console_utils.h
-        #include/core/GameLoop.h
+        Include/core/types.h
+        Include/core/renderer.h
+        Include/core/input.h
+        Include/core/audio.h
+        Include/core/game.h
+        Include/core/menu.h
+        Include/core/save_system.h
+        Include/core/leaderboard.h
+        Include/core/sprites.h
 )
 
 set(PLATFORM_SOURCES   "")

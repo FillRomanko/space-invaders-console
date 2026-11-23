@@ -8,6 +8,7 @@
 *.obj
 
 # IDE
+build/
 .idea/
 .vs/
 .vscode/

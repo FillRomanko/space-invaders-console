@@ -1,202 +1,136 @@
 ﻿#include "../../../Include/platform/win32/console_utils_win32.h"
 #include "../../../include/utils/console_utils.h"
-
-static bool FindMaxFontSize(HANDLE hConsole, int cols, int rows,
-                            CONSOLE_FONT_INFOEX* outFont) { // ищет максимально возможный шрифт
-    CONSOLE_FONT_INFOEX original; // хранит параметры шрифта
-    original.cbSize = sizeof(original); // сохраняем оригинальный размер шрифта
-    if (!GetCurrentConsoleFontEx(hConsole, FALSE, &original)) {
-        return false; // если не получили данные шрифта
-    }
-
-    CONSOLE_FONT_INFOEX best = original; // храним лучший вариант
-    bool found = false; // вернём true, если найдём подходящий вариант
-
-    int lo = 5;
-    int hi = 72;
-    while (lo <= hi) {
-        int mid = lo + (hi - lo) / 2; // бинарный поиск максимально возможного шрифта
-
-        CONSOLE_FONT_INFOEX test = original;
-        test.dwFontSize.Y = static_cast<SHORT>(mid); // меняем высоту шрифта до mid
-        test.dwFontSize.X = 0; // оставляем ширину шрифта пропорциональной высоте
-
-        if (!SetCurrentConsoleFontEx(hConsole, FALSE, &test)) {
-            hi = mid - 1;
-            continue; // если шрифт слишком большой для применения, уменьшаем верхнюю границу
-        }
-
-        COORD largest = GetLargestConsoleWindowSize(hConsole); // получаем размер окна в символах
-        if (largest.X >= cols && largest.Y >= rows) { // если рамка меньше окна, значит подходит
-            best = test;
-            found = true;
-            lo = mid + 1;
-        } else { // продолжаем поиски уменьшая ожидаемый резульатт
-            hi = mid - 1;
-        }
-    }
-
-    if (!found) { // не нашли, откатываем шрифт
-        SetCurrentConsoleFontEx(hConsole, FALSE, &original);
-        return false;
-    }
-
-    SetCurrentConsoleFontEx(hConsole, FALSE, &best); // меняем шрифт на найденный
-    *outFont = best;
-    return true;
-}
+#include <cstdio>
 
 bool console_utils::InitializeConsole(int cols, int rows) {
-    if (cols <= 0 || rows <= 0) { // проверка на идиота
+    if (cols <= 0 || rows <= 0) {
         return false;
     }
 
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE); // пытаемся получить хэндл вывода
-    if (hConsole == INVALID_HANDLE_VALUE) {
+    // Create a new console screen buffer
+    HANDLE hNewBuffer = CreateConsoleScreenBuffer(
+        GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL,
+        CONSOLE_TEXTMODE_BUFFER,
+        NULL
+    );
+
+    if (hNewBuffer == INVALID_HANDLE_VALUE) {
         return false;
     }
 
-    CONSOLE_FONT_INFOEX chosenFont;
-    if (!FindMaxFontSize(hConsole, cols, rows, &chosenFont)) { // ищем размер шрифта написанной выше функцией
-        return false;
-    }
+    // Try smaller fonts to fit more rows (target: 150+ rows)
+    // Try 4x8 first, then 5x8, then 6x12
+    CONSOLE_FONT_INFOEX font;
+    font.cbSize = sizeof(font);
+    font.nFont = 0;
+    font.FontFamily = FF_DONTCARE;
+    font.FontWeight = FW_NORMAL;
 
-    if (!SetCurrentConsoleFontEx(hConsole, FALSE, &chosenFont)) { // устанавливаем шрифт второй раз, на случай не кооректной работы функции выше
-        return false;
-    }
-
-    // Уменьшаем окно, чтобы буфер можно было свободно менять.
-    SMALL_RECT minWin = { 0, 0, 0, 0 };
-    if (!SetConsoleWindowInfo(hConsole, TRUE, &minWin)) {
-        return false;
-    }
-
-    COORD largest = GetLargestConsoleWindowSize(hConsole); // смотрим максимальный размер окна в символах
-    if (!SetConsoleScreenBufferSize(hConsole, largest)) { // растягиваем буфер
-        return false;
-    }
-
-    SMALL_RECT maxWin = {
-        0, 0,
-        static_cast<SHORT>(largest.X - 1),
-        static_cast<SHORT>(largest.Y - 1)
+    bool fontSet = false;
+    const struct { short w, h; const wchar_t* name; } fonts[] = {
+        {4, 8, L"Terminal"},      // Raster font, smallest
+        {5, 8, L"Consolas"},      // Small Consolas
+        {6, 10, L"Consolas"},     // Medium Consolas
+        {6, 12, L"Consolas"},     // Original
     };
-    if (!SetConsoleWindowInfo(hConsole, TRUE, &maxWin)) { // растягиваем видимое окно до размеров буфера
+
+    for (size_t i = 0; i < sizeof(fonts)/sizeof(fonts[0]); ++i) {
+        font.dwFontSize.X = fonts[i].w;
+        font.dwFontSize.Y = fonts[i].h;
+        wcscpy_s(font.FaceName, fonts[i].name);
+        if (SetCurrentConsoleFontEx(hNewBuffer, FALSE, &font)) {
+            fontSet = true;
+            break;
+        }
+    }
+
+    if (!fontSet) {
+        // Fallback
+        font.dwFontSize.X = 6;
+        font.dwFontSize.Y = 12;
+        wcscpy_s(font.FaceName, L"Consolas");
+        SetCurrentConsoleFontEx(hNewBuffer, FALSE, &font);
+    }
+
+    // Set buffer size to requested (or max available)
+    COORD bufferSize = { static_cast<SHORT>(cols), static_cast<SHORT>(rows) };
+    if (!SetConsoleScreenBufferSize(hNewBuffer, bufferSize)) {
+        CloseHandle(hNewBuffer);
         return false;
     }
 
+    // Check max window with current font
+    COORD maxWindow = GetLargestConsoleWindowSize(hNewBuffer);
+    int winCols = cols;
+    int winRows = rows;
+    if (winCols > maxWindow.X) winCols = maxWindow.X;
+    if (winRows > maxWindow.Y) winRows = maxWindow.Y;
+
+    // Set window size
+    SMALL_RECT windowRect = { 0, 0, static_cast<SHORT>(winCols - 1), static_cast<SHORT>(winRows - 1) };
+    if (!SetConsoleWindowInfo(hNewBuffer, TRUE, &windowRect)) {
+        CloseHandle(hNewBuffer);
+        return false;
+    }
+
+    // Set as active screen buffer
+    if (!SetConsoleActiveScreenBuffer(hNewBuffer)) {
+        CloseHandle(hNewBuffer);
+        return false;
+    }
+
+    // Also set as standard output handle
+    SetStdHandle(STD_OUTPUT_HANDLE, hNewBuffer);
+
+    // Maximize window to full screen
     HWND hwnd = GetConsoleWindow();
     if (hwnd) {
+        // Remove window decorations for true fullscreen
         LONG style = GetWindowLong(hwnd, GWL_STYLE);
-        style &= ~(WS_CAPTION | WS_THICKFRAME | WS_BORDER); // убираем заголовок, верхнюю большую рамку, тонкие рамки
+        style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_BORDER);
         SetWindowLong(hwnd, GWL_STYLE, style);
-        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED); // немедленно применяем новый стиль консоли
 
-        ShowWindow(hwnd, SW_MAXIMIZE); // делаем на весь экран
-        UpdateWindow(hwnd); // принудительно перерисовываем
+        // Get screen size
+        int screenW = GetSystemMetrics(SM_CXSCREEN);
+        int screenH = GetSystemMetrics(SM_CYSCREEN);
+
+        // Set window to full screen
+        SetWindowPos(hwnd, HWND_TOP, 0, 0, screenW, screenH, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        ShowWindow(hwnd, SW_MAXIMIZE);
+
+        // Force focus
+        SetForegroundWindow(hwnd);
+        SetFocus(hwnd);
     }
 
-    // получаем актуальную информацию консоли после перерисовки
-    CONSOLE_SCREEN_BUFFER_INFO buffer_info;
-    if (!GetConsoleScreenBufferInfo(hConsole, &buffer_info)) {
-        return false;
+    // Hide cursor on new buffer
+    CONSOLE_CURSOR_INFO cursorInfo = { 1, FALSE };
+    SetConsoleCursorInfo(hNewBuffer, &cursorInfo);
+
+    // Also hide cursor on original stdout buffer (in case it's different)
+    HANDLE hOrigOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOrigOut != hNewBuffer && hOrigOut != INVALID_HANDLE_VALUE) {
+        SetConsoleCursorInfo(hOrigOut, &cursorInfo);
     }
 
-    auto winCols = static_cast<SHORT>(buffer_info.srWindow.Right - buffer_info.srWindow.Left + 1);
-    auto winRows = static_cast<SHORT>(buffer_info.srWindow.Bottom - buffer_info.srWindow.Top + 1);
-
-    // Если после maximize окно оказалось больше буфера —
-    // аккуратно увеличиваем буфер и заново максимизируем.
-    if (buffer_info.dwSize.X < winCols || buffer_info.dwSize.Y < winRows) {
-        SMALL_RECT tmp = { 0, 0, 0, 0 };
-        SetConsoleWindowInfo(hConsole, TRUE, &tmp);
-
-        COORD newBuf = {
-            (buffer_info.dwSize.X > winCols) ? buffer_info.dwSize.X : winCols,
-            (buffer_info.dwSize.Y > winRows) ? buffer_info.dwSize.Y : winRows
-        }; // новый буфер либо как был раньше, либо стал больше
-        if (!SetConsoleScreenBufferSize(hConsole, newBuf)) {
-            return false;
+    // Force focus more aggressively (reuse hwnd from above)
+    if (hwnd) {
+        // Bring to front and activate
+        SetForegroundWindow(hwnd);
+        SetFocus(hwnd);
+        SetActiveWindow(hwnd);
+        // Also try AttachThreadInput trick for focus
+        DWORD foreThread = GetWindowThreadProcessId(GetForegroundWindow(), NULL);
+        DWORD currThread = GetCurrentThreadId();
+        if (foreThread != currThread) {
+            AttachThreadInput(currThread, foreThread, TRUE);
+            SetForegroundWindow(hwnd);
+            SetFocus(hwnd);
+            AttachThreadInput(currThread, foreThread, FALSE);
         }
-
-        if (hwnd) {
-            ShowWindow(hwnd, SW_MAXIMIZE);
-            UpdateWindow(hwnd);
-        }
-
-        if (!GetConsoleScreenBufferInfo(hConsole, &buffer_info)) {
-            return false;
-        }
-        winCols = static_cast<SHORT>(buffer_info.srWindow.Right - buffer_info.srWindow.Left + 1);
-        winRows = static_cast<SHORT>(buffer_info.srWindow.Bottom - buffer_info.srWindow.Top + 1);
     }
-
-    // Центрируем рамку в реально видимой области окна.
-    int offsetX = (winCols - cols) / 2;
-    int offsetY = (winRows - rows) / 2;
-    if (offsetX < 0) offsetX = 0;
-    if (offsetY < 0) offsetY = 0;
-
-    // srWindow может начинаться не с (0,0), если буфер больше окна.
-    SHORT baseX = buffer_info.srWindow.Left;
-    SHORT baseY = buffer_info.srWindow.Top;
-
-    DWORD written = 0;
-    // рисуем верхнюю линию
-    for (int x = 0; x < cols; ++x) {
-        COORD posT = {
-            static_cast<SHORT>(baseX + offsetX + x),
-            static_cast<SHORT>(baseY + offsetY)
-        };
-        FillConsoleOutputCharacterA(hConsole, '-', 1, posT, &written);
-    }
-
-    // Верхние углы
-    COORD cornerTL = {
-        static_cast<SHORT>(baseX + offsetX),
-        static_cast<SHORT>(baseY + offsetY)
-    };
-    FillConsoleOutputCharacterA(hConsole, '+', 1, cornerTL, &written);
-
-    COORD cornerTR = {
-        static_cast<SHORT>(baseX + offsetX + cols - 1),
-        static_cast<SHORT>(baseY + offsetY)
-    };
-    FillConsoleOutputCharacterA(hConsole, '+', 1, cornerTR, &written);
-
-    for (int y = 1; y < rows; ++y) { // рисуем боковые части рамки
-        COORD posL = {
-            static_cast<SHORT>(baseX + offsetX),
-            static_cast<SHORT>(baseY + offsetY + y)
-        };
-        FillConsoleOutputCharacterA(hConsole, '|', 1, posL, &written);
-
-        COORD posR = {
-            static_cast<SHORT>(baseX + offsetX + cols - 1),
-            static_cast<SHORT>(baseY + offsetY + y)
-        };
-        FillConsoleOutputCharacterA(hConsole, '|', 1, posR, &written);
-    }
-    for (int x = 0; x < cols; ++x) { // рисуем низ
-        COORD posB = {
-            static_cast<SHORT>(baseX + offsetX + x),
-            static_cast<SHORT>(baseY + offsetY + rows - 1)
-        };
-        FillConsoleOutputCharacterA(hConsole, '-', 1, posB, &written);
-    }
-
-    COORD cornerBL = { // заменяем углы на плюсы внизу
-        static_cast<SHORT>(baseX + offsetX),
-        static_cast<SHORT>(baseY + offsetY + rows - 1)
-    };
-    FillConsoleOutputCharacterA(hConsole, '+', 1, cornerBL, &written);
-
-    COORD cornerBR = {
-        static_cast<SHORT>(baseX + offsetX + cols - 1),
-        static_cast<SHORT>(baseY + offsetY + rows - 1)
-    };
-    FillConsoleOutputCharacterA(hConsole, '+', 1, cornerBR, &written);
 
     return true;
 }
