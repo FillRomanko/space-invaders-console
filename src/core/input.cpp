@@ -33,31 +33,36 @@ void input_poll(AppState* app, InputState* out) {
     out->mouse_moved = 0;
     out->input_char_count = 0;
 
+    // Неблокирующий опрос: сначала Peek, чтобы узнать есть ли события
     DWORD numEvents = 0;
-    if (!PeekConsoleInputA(app->hInput, app->inputBuffer, 32, &numEvents)) {
-        // Копируем удержанное состояние
+    if (!PeekConsoleInputA(app->hInput, app->inputBuffer, 128, &numEvents)) {
+        // Ошибка — копируем удержанное состояние и выходим
         memcpy(out->key_held, g_key_held, sizeof(g_key_held));
         return;
     }
 
     if (numEvents == 0) {
+        // Событий нет — просто копируем удержанное состояние
         memcpy(out->key_held, g_key_held, sizeof(g_key_held));
         return;
     }
 
-    INPUT_RECORD* buf = app->inputBuffer;
-    for (DWORD i = 0; i < numEvents; ++i) {
-        INPUT_RECORD* rec = &buf[i];
+    // Есть события — читаем их ReadConsoleInputA (теперь оно не заблокируется)
+    INPUT_RECORD rec;
+    DWORD numRead = 0;
 
-        switch (rec->EventType) {
+    while (numEvents > 0 && ReadConsoleInputA(app->hInput, &rec, 1, &numRead) && numRead > 0) {
+        numEvents--;
+        switch (rec.EventType) {
             case KEY_EVENT: {
-                WORD vk = rec->Event.KeyEvent.wVirtualKeyCode;
+                WORD vk = rec.Event.KeyEvent.wVirtualKeyCode;
                 if (vk >= KEY_COUNT) break;
 
-                if (rec->Event.KeyEvent.bKeyDown) {
-                    // Клавиша нажата в этом кадре
+                if (rec.Event.KeyEvent.bKeyDown) {
+                    // Клавиша нажата (или автоповтор при удержании).
+                    // key_pressed = 1 на каждом такте автоповтора — это даёт
+                    // возможность зажать пробел для стрельбы.
                     out->key_pressed[vk] = 1;
-                    // Обновляем состояние удержания
                     g_key_held[vk] = 1;
                 } else {
                     // Клавиша отпущена
@@ -65,7 +70,7 @@ void input_poll(AppState* app, InputState* out) {
                 }
 
                 // Обработка текстового ввода (UnicodeChar)
-                WCHAR ch = rec->Event.KeyEvent.uChar.UnicodeChar;
+                WCHAR ch = rec.Event.KeyEvent.uChar.UnicodeChar;
                 if (ch != 0 && ch != '\r' && ch != '\n' && ch != '\b' && ch != '\t' && ch != 27) {
                     // Печатаемые символы (ASCII диапазон)
                     if (ch >= 32 && ch <= 126 && out->input_char_count < 16) {
@@ -75,20 +80,20 @@ void input_poll(AppState* app, InputState* out) {
                 break;
             }
             case MOUSE_EVENT: {
-                out->mouse_x = rec->Event.MouseEvent.dwMousePosition.X;
-                out->mouse_y = rec->Event.MouseEvent.dwMousePosition.Y;
+                out->mouse_x = rec.Event.MouseEvent.dwMousePosition.X;
+                out->mouse_y = rec.Event.MouseEvent.dwMousePosition.Y;
 
                 // Конвертируем в координаты игрового поля
                 out->mouse_x -= app->offsetX;
                 out->mouse_y -= app->offsetY;
 
-                if (rec->Event.MouseEvent.dwButtonState & FROM_LEFT_1ST_BUTTON_PRESSED) {
+                if (rec.Event.MouseEvent.dwButtonState & FROM_LEFT_1ST_BUTTON_PRESSED) {
                     out->mouse_left = 1;
                 }
-                if (rec->Event.MouseEvent.dwButtonState & RIGHTMOST_BUTTON_PRESSED) {
+                if (rec.Event.MouseEvent.dwButtonState & RIGHTMOST_BUTTON_PRESSED) {
                     out->mouse_right = 1;
                 }
-                if (rec->Event.MouseEvent.dwEventFlags & MOUSE_MOVED) {
+                if (rec.Event.MouseEvent.dwEventFlags & MOUSE_MOVED) {
                     out->mouse_moved = 1;
                 }
                 break;
@@ -102,14 +107,12 @@ void input_poll(AppState* app, InputState* out) {
                 app->consoleHeight = info.srWindow.Bottom - info.srWindow.Top + 1;
                 break;
             }
+            // Остальные типы событий (FOCUS_EVENT, MENU_EVENT) игнорируем
         }
     }
 
     // Копируем текущее состояние удержания
     memcpy(out->key_held, g_key_held, sizeof(g_key_held));
-
-    // Удаляем обработанные события из очереди
-    FlushConsoleInputBuffer(app->hInput);
 }
 
 uint8_t input_is_pressed(const InputState* state, KeyCode key) {
