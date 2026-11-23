@@ -22,7 +22,7 @@ static const int POWERUP_SPAWN_CHANCE = 15;       // % шанс выпадени
 // POWERUP_SPEED теперь использует такую же систему как враги (ENEMY_BASE_SPEED_NUM/ENEMY_BASE_SPEED_DEN)
 static const int SHIELD_DURATION = 10 * 60;       // 10 секунд
 static const int TRIPLE_DURATION = 8 * 60;        // 8 секунд
-static const int TRIPLE_EXTEND = 5 * 60;          // продление при повторном подборе
+static const int TRIPLE_EXTEND = 10 * 60;          // продление при повторном подборе
 
 // Генератор случайных чисел
 static uint32_t g_rng_state = 0;

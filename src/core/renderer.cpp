@@ -383,13 +383,10 @@ void renderer_draw_enemies(AppState* app) {
 
         renderer_draw_sprite_transparent(app, spriteX, spriteY, SPRITE_ENEMY, SPRITE_ENEMY_H, COL_ENEMY, ' ');
 
-        // Зелёная часть: центрируем по своей высоте, чтобы контент (глаза в строке 2) совпадал
-        // Основной спрайт: глаза в строке 2, всего 17 строк, центр в 8.5 -> верхушка в y-8
-        // Зелёный спрайт: глаза в строке 2, всего 14 строк, центр в 7 -> верхушка в y-7
-        // Чтобы глаза совпали: greenY = e->y - 7 = e->y - SPRITE_ENEMY_GREEN_H / 2
-        int greenX = e->x - SPRITE_ENEMY_GREEN_W / 2;
-        int greenY = e->y - SPRITE_ENEMY_GREEN_H / 2;
-        renderer_draw_sprite_transparent(app, greenX, greenY, SPRITE_ENEMY_GREEN, SPRITE_ENEMY_GREEN_H, COL_ENEMY_GREEN, ' ');
+        // Зелёная часть: рисуем от ТОЙ ЖЕ точки (spriteX, spriteY), что и основной спрайт.
+        // В SPRITE_ENEMY_GREEN первые 2 строки пустые (""), поэтому контент (глаза в строке 2)
+        // идеально совпадает с основным спрайтом при одинаковой позиции левого верхнего угла.
+        renderer_draw_sprite_transparent(app, spriteX, spriteY, SPRITE_ENEMY_GREEN, SPRITE_ENEMY_GREEN_H, COL_ENEMY_GREEN, ' ');
     }
 }
 
