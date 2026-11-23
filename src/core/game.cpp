@@ -12,14 +12,19 @@
 #include <cmath>
 
 // Константы игры
-static const int PLAYER_SPEED = 3;           // клеток за кадр (было 2, увеличено в 1.5x)
+static const int PLAYER_SPEED = 4;           // клеток за кадр
 static const int BULLET_SPEED = 8;           // клеток за кадр (быстрее игрока в 4 раза)
 static const int ENEMY_BASE_SPEED_NUM = 1;   // базовая скорость врага (числитель)
 static const int ENEMY_BASE_SPEED_DEN = 4;   // знаменатель (1/4 клетки за кадр)
-static const int ENEMY_SPAWN_BASE_INTERVAL = 120; // базовый интервал спавна (2 сек при 60 FPS)
-static const int ENEMY_SPAWN_MIN_INTERVAL = 30;   // минимум (0.5 сек)
+static const int ENEMY_SPAWN_BASE_INTERVAL = 90;  // базовый интервал спавна (1.5 сек при 60 FPS)
+static const int ENEMY_SPAWN_MIN_INTERVAL = 0;   // минимум = базовый (не ускоряем спавн выше базового)
+static const int ENEMY_SPAWN_MAX_INTERVAL = 120;  // максимум = 2 сек (не замедляем спавн сильнее)
 static const int POWERUP_SPAWN_CHANCE = 15;       // % шанс выпадения усиления
-// POWERUP_SPEED теперь использует такую же систему как враги (ENEMY_BASE_SPEED_NUM/ENEMY_BASE_SPEED_DEN)
+
+// Скорость усилений: фиксированная 90 клеток/сек = 1.5 клеток/кадр при 60 FPS
+static const int POWERUP_SPEED_NUM = 3;    // числитель
+static const int POWERUP_SPEED_DEN = 2;    // знаменатель (3/2 = 1.5 клетки/кадр)
+
 static const int SHIELD_DURATION = 10 * 60;       // 10 секунд
 static const int TRIPLE_DURATION = 8 * 60;        // 8 секунд
 static const int TRIPLE_EXTEND = 10 * 60;          // продление при повторном подборе
@@ -226,7 +231,7 @@ void game_tick(AppState* app, const InputState* input, float /*dt*/) {
 
     // Движение врагов вниз
     // Скорость растет вогнуто: speed = base * (1 + log(1 + time/1000))
-    float speedMult = 1.0f + logf(1.0f + gs->game_time_ticks / 1000.0f) * 0.3f;
+    float speedMult = 1.0f + logf(1.0f + gs->game_time_ticks / 1000.0f) * 4.3f;
     int enemySpeedNum = static_cast<int>(ENEMY_BASE_SPEED_NUM * speedMult * 100);
     int enemySpeedDen = ENEMY_BASE_SPEED_DEN * 100;
 
@@ -236,11 +241,11 @@ void game_tick(AppState* app, const InputState* input, float /*dt*/) {
     int moveSteps = enemyAccumulator / enemySpeedDen;
     enemyAccumulator %= enemySpeedDen;
 
-    // Аккумулятор для дробной скорости усилений (та же скорость что и враги)
+    // Аккумулятор для дробной скорости усилений (фиксированная скорость POWERUP_SPEED_NUM/POWERUP_SPEED_DEN)
     static int powerupAccumulator = 0;
-    powerupAccumulator += enemySpeedNum;
-    int powerupMoveSteps = powerupAccumulator / enemySpeedDen;
-    powerupAccumulator %= enemySpeedDen;
+    powerupAccumulator += POWERUP_SPEED_NUM * 100;  // *100 для точности как у врагов
+    int powerupMoveSteps = powerupAccumulator / (POWERUP_SPEED_DEN * 100);
+    powerupAccumulator %= (POWERUP_SPEED_DEN * 100);
 
     for (int step = 0; step < moveSteps; ++step) {
         for (int i = 0; i < gs->enemy_count; ++i) {
@@ -293,6 +298,12 @@ void game_tick(AppState* app, const InputState* input, float /*dt*/) {
                 if (gs->base_hp <= 0) {
                     gs->game_over = 1;
                 }
+            }
+
+            // MODE_NORMAL: враг улетел за нижнюю границу экрана — удаляем
+            // (SPRITE_ENEMY_H = 17, поэтому проверяем play_height + 17 — полностью за экраном)
+            if (gs->mode == MODE_NORMAL && e->y > gs->play_height + SPRITE_ENEMY_H) {
+                e->active = 0;
             }
         }
     }
@@ -386,7 +397,7 @@ void game_tick(AppState* app, const InputState* input, float /*dt*/) {
         PowerUp* p = &gs->powerups[i];
         if (!p->active) continue;
 
-        // Усиления падают с той же скоростью, что и враги
+        // Усиления падают с фиксированной скоростью POWERUP_SPEED_NUM/POWERUP_SPEED_DEN (90 клеток/сек = 1.5 клеток/кадр)
         for (int step = 0; step < powerupMoveSteps; ++step) {
             p->y += 1;
         }
@@ -568,20 +579,22 @@ void game_collect_powerup(AppState* app, int powerup_index) {
 void game_update_difficulty(AppState* app, int16_t killed_enemy_y) {
     GameState* gs = &app->game;
 
-    // Цель: враги умирают по центру по высоте
-    int targetY = gs->play_height / 2;
+    // Цель: враги умирают на 2/3 высоты экрана
+    // Верхние 2/3 (0..2/3) — ускоряет спавн
+    // Нижние 1/3 (2/3..1) — замедляет спавн
+    int targetY = (gs->play_height * 2) / 3;
     int diff = killed_enemy_y - targetY;
 
-    // Если враг умер выше центра (diff < 0) - игрок успевает, увеличиваем спавн
-    // Если враг умер ниже центра (diff > 0) - игрок не успевает, уменьшаем спавн
+    // Если враг умер выше 2/3 (diff < 0) - игрок успевает, ускоряем спавн
+    // Если враг умер ниже 2/3 (diff > 0) - игрок не успевает, замедляем спавн
     if (diff < -5) {
-        // Умер далеко выше - слишком легко
+        // Умер далеко выше 2/3 - слишком легко
         if (gs->enemy_spawn_interval > ENEMY_SPAWN_MIN_INTERVAL) {
             gs->enemy_spawn_interval -= 2;
         }
     } else if (diff > 5) {
-        // Умер ниже - слишком сложно
-        if (gs->enemy_spawn_interval < ENEMY_SPAWN_BASE_INTERVAL * 2) {
+        // Умер ниже 2/3 - слишком сложно
+        if (gs->enemy_spawn_interval < ENEMY_SPAWN_MAX_INTERVAL) {
             gs->enemy_spawn_interval += 3;
         }
     }
@@ -590,8 +603,8 @@ void game_update_difficulty(AppState* app, int16_t killed_enemy_y) {
     if (gs->enemy_spawn_interval < ENEMY_SPAWN_MIN_INTERVAL) {
         gs->enemy_spawn_interval = ENEMY_SPAWN_MIN_INTERVAL;
     }
-    if (gs->enemy_spawn_interval > ENEMY_SPAWN_BASE_INTERVAL * 3) {
-        gs->enemy_spawn_interval = ENEMY_SPAWN_BASE_INTERVAL * 3;
+    if (gs->enemy_spawn_interval > ENEMY_SPAWN_MAX_INTERVAL) {
+        gs->enemy_spawn_interval = ENEMY_SPAWN_MAX_INTERVAL;
     }
 }
 
