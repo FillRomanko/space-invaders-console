@@ -85,4 +85,9 @@ void renderer_present(AppState* app);
 // Получение указателя на текущий буфер для прямого доступа
 CHAR_INFO* renderer_get_buffer(AppState* app);
 
+// Обновление шрифта консоли в зависимости от режима (меню/игра).
+// Вызывать в начале кадра ДО renderer_clear.
+// Меняет шрифт на ОБОИХ буферах, пересчитывает playWidth/playHeight/offsetX/offsetY.
+void renderer_update_font(AppState* app);
+
 #endif // SPACE_INVADERS_RENDERER_H

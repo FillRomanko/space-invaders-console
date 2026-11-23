@@ -4,4 +4,16 @@
 #pragma once
 #include <windows.h>
 
+namespace win32_console {
+    // Режимы шрифта
+    enum FontMode {
+        FONT_MODE_MENU = 0,  // Крупный шрифт для меню
+        FONT_MODE_GAME = 1   // Мелкий шрифт для игры
+    };
+
+    // Смена шрифта консоли на лету для указанного буфера.
+    // Возвращает true при успехе. Обновляет *outCols и *outRows новым размером окна в символах.
+    bool SetConsoleFontMode(HANDLE hBuffer, FontMode mode, int* outCols, int* outRows);
+}
+
 #endif //SPACE_INVADERS_CONSOLE_CONSOLE_UTILS_WIN32_H

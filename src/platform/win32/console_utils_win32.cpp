@@ -2,6 +2,58 @@
 #include "../../../include/utils/console_utils.h"
 #include <cstdio>
 
+// Внутренняя функция: применяет шрифт к буферу и возвращает новый размер окна
+static bool ApplyFontToBuffer(HANDLE hBuffer, win32_console::FontMode mode, int* outCols, int* outRows) {
+    CONSOLE_FONT_INFOEX font{};
+    font.cbSize = sizeof(font);
+    font.nFont = 0;
+    font.FontFamily = FF_DONTCARE;
+    font.FontWeight = FW_NORMAL;
+
+    if (mode == win32_console::FONT_MODE_MENU) {
+        // Меню: крупный шрифт — 10x20 Consolas (читаемо, достаточно места для меню)
+        font.dwFontSize.X = 10;
+        font.dwFontSize.Y = 20;
+        wcscpy_s(font.FaceName, L"Consolas");
+    } else {
+        // Игра: мелкий шрифт — 4x8 Terminal (максимум игровой области)
+        font.dwFontSize.X = 4;
+        font.dwFontSize.Y = 8;
+        wcscpy_s(font.FaceName, L"Terminal");
+    }
+
+    if (!SetCurrentConsoleFontEx(hBuffer, FALSE, &font)) {
+        // Фоллбэк: пробуем Consolas для обоих режимов
+        if (mode == win32_console::FONT_MODE_MENU) {
+            font.dwFontSize.X = 8;
+            font.dwFontSize.Y = 16;
+        } else {
+            font.dwFontSize.X = 5;
+            font.dwFontSize.Y = 8;
+        }
+        wcscpy_s(font.FaceName, L"Consolas");
+        if (!SetCurrentConsoleFontEx(hBuffer, FALSE, &font)) {
+            return false;
+        }
+    }
+
+    // После смены шрифта получаем максимальный размер окна
+    COORD maxWindow = GetLargestConsoleWindowSize(hBuffer);
+    if (maxWindow.X == 0 || maxWindow.Y == 0) {
+        return false;
+    }
+
+    // Устанавливаем окно на максимальный доступный размер
+    SMALL_RECT windowRect = { 0, 0, static_cast<SHORT>(maxWindow.X - 1), static_cast<SHORT>(maxWindow.Y - 1) };
+    if (!SetConsoleWindowInfo(hBuffer, TRUE, &windowRect)) {
+        return false;
+    }
+
+    if (outCols) *outCols = maxWindow.X;
+    if (outRows) *outRows = maxWindow.Y;
+    return true;
+}
+
 bool console_utils::InitializeConsole(int cols, int rows) {
     if (cols <= 0 || rows <= 0) {
         return false;
@@ -133,4 +185,8 @@ bool console_utils::InitializeConsole(int cols, int rows) {
     }
 
     return true;
+}
+
+bool win32_console::SetConsoleFontMode(HANDLE hBuffer, FontMode mode, int* outCols, int* outRows) {
+    return ApplyFontToBuffer(hBuffer, mode, outCols, outRows);
 }

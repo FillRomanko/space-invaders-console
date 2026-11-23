@@ -4,6 +4,7 @@
 #include "../../Include/core/leaderboard.h"
 #include "../../Include/core/menu.h"
 #include "../../Include/core/save_system.h"
+#include "../../Include/platform/win32/console_utils_win32.h"
 #include <windows.h>
 #include <cstdio>
 #include <cstring>
@@ -20,6 +21,59 @@ static inline void write_cell(CHAR_INFO* buffer, int width, int x, int y, char c
 static CHAR_INFO* g_backBuffer = nullptr;
 static int g_backBufferWidth = 0;
 static int g_backBufferHeight = 0;
+
+// Обновление шрифта консоли в зависимости от режима (меню/игра).
+// Вызывать в начале кадра ДО renderer_clear.
+// Меняет шрифт на ОБОИХ буферах, пересчитывает playWidth/playHeight/offsetX/offsetY.
+void renderer_update_font(AppState* app) {
+    // Определяем желаемый режим шрифта
+    win32_console::FontMode desiredMode = app->game.in_menu ? win32_console::FONT_MODE_MENU : win32_console::FONT_MODE_GAME;
+
+    // Если режим не менялся — ничего не делаем
+    if (app->currentFontMode == static_cast<uint8_t>(desiredMode)) {
+        return;
+    }
+
+    // Меняем шрифт на ОБОИХ буферах двойной буферизации
+    int newCols = 0, newRows = 0;
+    bool ok0 = win32_console::SetConsoleFontMode(app->hBuffer[0], desiredMode, &newCols, &newRows);
+    bool ok1 = win32_console::SetConsoleFontMode(app->hBuffer[1], desiredMode, &newCols, &newRows);
+
+    if (!ok0 || !ok1) {
+        // Не удалось сменить шрифт — остаёмся в старом режиме
+        return;
+    }
+
+    // Обновляем размеры в AppState
+    app->consoleWidth = newCols;
+    app->consoleHeight = newRows;
+
+    // Игровая область = окно минус рамка (2 символа по горизонтали и вертикали)
+    int actualPlayWidth = newCols - 2;
+    int actualPlayHeight = newRows - 2;
+    if (actualPlayWidth < 10) actualPlayWidth = 10;
+    if (actualPlayHeight < 10) actualPlayHeight = 10;
+
+    app->offsetX = 1;
+    app->offsetY = 1;
+    app->playWidth = actualPlayWidth;
+    app->playHeight = actualPlayHeight;
+
+    // Синхронизируем GameState
+    app->game.play_width = actualPlayWidth;
+    app->game.play_height = actualPlayHeight;
+    app->game.offset_x = 1;
+    app->game.offset_y = 1;
+
+    // Пересоздаём бэк-буфер в памяти под новый размер
+    delete[] g_backBuffer;
+    g_backBufferWidth = newCols;
+    g_backBufferHeight = newRows;
+    g_backBuffer = new CHAR_INFO[g_backBufferWidth * g_backBufferHeight];
+
+    // Запоминаем текущий режим
+    app->currentFontMode = static_cast<uint8_t>(desiredMode);
+}
 
 // === Font Sprite System ===
 
@@ -332,34 +386,46 @@ void renderer_draw_powerups(AppState* app) {
 void renderer_draw_ui(AppState* app) {
     GameState* gs = &app->game;
 
-    font_draw_str(app, 2, 1, "SCORE:", COL_UI_TEXT);
-    font_draw_int(app, 2 + 7 * FONT_CHAR_W, 1, gs->player.score, COL_UI_YELLOW);
+    // Обычный текст — 1 символ = 1 ячейка. play_width ~300 в игровом режиме.
+    renderer_draw_str(app, 2, 1, "SCORE:", COL_UI_TEXT);
+    char scoreBuf[32];
+    _itoa_s(gs->player.score, scoreBuf, 10);
+    renderer_draw_str(app, 9, 1, scoreBuf, COL_UI_YELLOW);
 
-    font_draw_str(app, gs->play_width - 12 * FONT_CHAR_W, 1, "LIVES:", COL_UI_TEXT);
-    font_draw_int(app, gs->play_width - 5 * FONT_CHAR_W, 1, gs->player.hp, COL_UI_RED);
+    renderer_draw_str(app, gs->play_width - 14, 1, "LIVES:", COL_UI_TEXT);
+    char hpBuf[16];
+    _itoa_s(gs->player.hp, hpBuf, 10);
+    renderer_draw_str(app, gs->play_width - 7, 1, hpBuf, COL_UI_RED);
 
     if (gs->mode == MODE_DEFENSE) {
-        int baseX = gs->play_width / 2 - 8 * FONT_CHAR_W;
-        font_draw_str(app, baseX, 1, "BASE:", COL_UI_TEXT);
-        font_draw_int(app, baseX + 6 * FONT_CHAR_W, 1, gs->base_hp, COL_UI_YELLOW);
-        font_draw_char(app, baseX + 8 * FONT_CHAR_W, 1, '/', COL_UI_TEXT);
-        font_draw_int(app, baseX + 9 * FONT_CHAR_W, 1, gs->base_max_hp, COL_UI_GREEN);
+        int baseX = gs->play_width / 2 - 10;
+        renderer_draw_str(app, baseX, 1, "BASE:", COL_UI_TEXT);
+        char baseHpBuf[16], baseMaxBuf[16];
+        _itoa_s(gs->base_hp, baseHpBuf, 10);
+        _itoa_s(gs->base_max_hp, baseMaxBuf, 10);
+        renderer_draw_str(app, baseX + 6, 1, baseHpBuf, COL_UI_YELLOW);
+        renderer_draw_str(app, baseX + 6 + static_cast<int>(strlen(baseHpBuf)), 1, "/", COL_UI_TEXT);
+        renderer_draw_str(app, baseX + 6 + static_cast<int>(strlen(baseHpBuf)) + 1, 1, baseMaxBuf, COL_UI_GREEN);
     }
 
-    int y = 1 + FONT_CHAR_H;
+    int y = 2;
     if (gs->player.shield_active) {
-        font_draw_str(app, 2, y, "SHIELD", COL_POWERUP);
-        y += FONT_CHAR_H;
+        renderer_draw_str(app, 2, y, "SHIELD", COL_POWERUP);
+        y++;
     }
     if (gs->player.triple_straight_timer > 0) {
-        font_draw_str(app, 2, y, "TRIPLE: ", COL_POWERUP);
-        font_draw_int(app, 2 + 8 * FONT_CHAR_W, y, gs->player.triple_straight_timer / 60, COL_YELLOW);
-        y += FONT_CHAR_H;
+        renderer_draw_str(app, 2, y, "TRIPLE: ", COL_POWERUP);
+        char tBuf[16];
+        _itoa_s(gs->player.triple_straight_timer / 60, tBuf, 10);
+        renderer_draw_str(app, 10, y, tBuf, COL_YELLOW);
+        y++;
     }
     if (gs->player.triple_diagonal_timer > 0) {
-        font_draw_str(app, 2, y, "DIAG: ", COL_POWERUP);
-        font_draw_int(app, 2 + 6 * FONT_CHAR_W, y, gs->player.triple_diagonal_timer / 60, COL_YELLOW);
-        y += FONT_CHAR_H;
+        renderer_draw_str(app, 2, y, "DIAG: ", COL_POWERUP);
+        char dBuf[16];
+        _itoa_s(gs->player.triple_diagonal_timer / 60, dBuf, 10);
+        renderer_draw_str(app, 9, y, dBuf, COL_YELLOW);
+        y++;
     }
 }
 
@@ -376,17 +442,25 @@ void renderer_draw_menu(AppState* app) {
         "EXIT GAME"
     };
 
-    font_draw_str(app, app->playWidth / 2 - 12 * FONT_CHAR_W, 3, "=== SPACE INVADERS ===", COL_MENU_SEL);
+    // Обычный текст — 1 символ = 1 ячейка. Центрируем по playWidth.
+    int titleX = app->playWidth / 2 - 10; // "=== SPACE INVADERS ===" = 21 символ
+    renderer_draw_str(app, titleX, 2, "=== SPACE INVADERS ===", COL_MENU_SEL);
 
-    font_draw_str(app, app->playWidth / 2 - 10 * FONT_CHAR_W, 4 + FONT_CHAR_H, app->playerName, COL_UI_YELLOW);
+    int nameX = app->playWidth / 2 - static_cast<int>(strlen(app->playerName)) / 2;
+    renderer_draw_str(app, nameX, 4, app->playerName, COL_UI_YELLOW);
 
-    int startY = app->playHeight / 2 - MAIN_COUNT / 2 * (FONT_CHAR_H + 1);
-    int startX = app->playWidth / 2 - 10 * FONT_CHAR_W;
+    // Пункты меню — центрированные, по 1 строке на пункт
+    int startY = app->playHeight / 2 - MAIN_COUNT / 2;
 
-    font_draw_menu(app, startX, startY, items, MAIN_COUNT, app->menuSelection, COL_MENU_NORM, COL_MENU_SEL);
+    for (int i = 0; i < MAIN_COUNT; ++i) {
+        WORD color = (i == app->menuSelection) ? COL_MENU_SEL : COL_MENU_NORM;
+        int itemX = app->playWidth / 2 - static_cast<int>(strlen(items[i])) / 2;
+        renderer_draw_str(app, itemX, startY + i, items[i], color);
+    }
 
-    font_draw_str(app, app->playWidth / 2 - 18 * FONT_CHAR_W, startY + MAIN_COUNT * 2 * (FONT_CHAR_H + 1) + (FONT_CHAR_H + 1),
-        "W/S or Arrows to navigate, Enter to select", COL_UI_TEXT);
+    const char* hint = "W/S or Arrows to navigate, Enter to select";
+    int hintX = app->playWidth / 2 - static_cast<int>(strlen(hint)) / 2;
+    renderer_draw_str(app, hintX, startY + MAIN_COUNT + 1, hint, COL_UI_TEXT);
 }
 
 void renderer_draw_pause(AppState* app) {
@@ -396,11 +470,14 @@ void renderer_draw_pause(AppState* app) {
         "EXIT GAME"
     };
 
-    font_draw_str(app, app->playWidth / 2 - 6 * FONT_CHAR_W, app->playHeight / 2 - 3 * (FONT_CHAR_H + 1), "=== PAUSED ===", COL_MENU_SEL);
+    renderer_draw_str(app, app->playWidth / 2 - 7, app->playHeight / 2 - 4, "=== PAUSED ===", COL_MENU_SEL);
 
-    int startX = app->playWidth / 2 - 7 * FONT_CHAR_W;
-    int startY = app->playHeight / 2 - (FONT_CHAR_H + 1);
-    font_draw_menu(app, startX, startY, items, PAUSE_COUNT, app->menuSelection, COL_UI_TEXT, COL_MENU_SEL);
+    int startY = app->playHeight / 2 - PAUSE_COUNT / 2;
+    for (int i = 0; i < PAUSE_COUNT; ++i) {
+        WORD color = (i == app->menuSelection) ? COL_MENU_SEL : COL_UI_TEXT;
+        int itemX = app->playWidth / 2 - static_cast<int>(strlen(items[i])) / 2;
+        renderer_draw_str(app, itemX, startY + i, items[i], color);
+    }
 }
 
 void renderer_draw_game_over(AppState* app) {
@@ -408,12 +485,13 @@ void renderer_draw_game_over(AppState* app) {
     renderer_clear(app, COL_GAME_BG);
     renderer_draw_frame(app);
 
-    font_draw_str(app, app->playWidth / 2 - 5 * FONT_CHAR_W, app->playHeight / 2 - 4 * (FONT_CHAR_H + 1), "GAME OVER", COL_UI_RED);
+    renderer_draw_str(app, app->playWidth / 2 - 4, app->playHeight / 2 - 5, "GAME OVER", COL_UI_RED);
 
-    font_draw_str(app, app->playWidth / 2 - 10 * FONT_CHAR_W, app->playHeight / 2 - 2 * (FONT_CHAR_H + 1), "FINAL SCORE:", COL_UI_TEXT);
+    const char* scoreLabel = "FINAL SCORE:";
+    renderer_draw_str(app, app->playWidth / 2 - static_cast<int>(strlen(scoreLabel)) / 2, app->playHeight / 2 - 3, scoreLabel, COL_UI_TEXT);
     char scoreBuf[32];
     _itoa_s(gs->player.score, scoreBuf, 10);
-    font_draw_str(app, app->playWidth / 2 + 2 * FONT_CHAR_W, app->playHeight / 2 - 2 * (FONT_CHAR_H + 1), scoreBuf, COL_UI_YELLOW);
+    renderer_draw_str(app, app->playWidth / 2 - static_cast<int>(strlen(scoreBuf)) / 2, app->playHeight / 2 - 2, scoreBuf, COL_UI_YELLOW);
 
     const char* items[GO_COUNT] = {
         "RESTART",
@@ -421,9 +499,12 @@ void renderer_draw_game_over(AppState* app) {
         "EXIT"
     };
 
-    int startX = app->playWidth / 2 - 5 * FONT_CHAR_W;
     int startY = app->playHeight / 2;
-    font_draw_menu(app, startX, startY, items, GO_COUNT, app->menuSelection, COL_UI_TEXT, COL_MENU_SEL);
+    for (int i = 0; i < GO_COUNT; ++i) {
+        WORD color = (i == app->menuSelection) ? COL_MENU_SEL : COL_UI_TEXT;
+        int itemX = app->playWidth / 2 - static_cast<int>(strlen(items[i])) / 2;
+        renderer_draw_str(app, itemX, startY + i, items[i], color);
+    }
 }
 
 void renderer_draw_leaderboard(AppState* app, GameMode mode) {
@@ -431,46 +512,51 @@ void renderer_draw_leaderboard(AppState* app, GameMode mode) {
     renderer_draw_frame(app);
 
     const char* modeName = (mode == MODE_NORMAL) ? "NORMAL MODE" : "DEFENSE MODE";
-    font_draw_str(app, app->playWidth / 2 - 5 * FONT_CHAR_W, 2, modeName, COL_MENU_SEL);
+    renderer_draw_str(app, app->playWidth / 2 - static_cast<int>(strlen(modeName)) / 2, 2, modeName, COL_MENU_SEL);
 
-    font_draw_str(app, 4, 4 + FONT_CHAR_H + 1, "RANK  NAME                    SCORE", COL_UI_TEXT);
+    const char* header = "RANK  NAME                    SCORE";
+    renderer_draw_str(app, 4, 4, header, COL_UI_TEXT);
 
     LeaderboardEntry entries[MAX_LEADERBOARD];
     int count = leaderboard_get(app, mode, entries, MAX_LEADERBOARD);
 
     for (int i = 0; i < count; ++i) {
-        int y = 6 + i * (FONT_CHAR_H + 1);
-        font_draw_str(app, 4, y, "  ", COL_UI_TEXT);
+        int y = 6 + i;
         char rankBuf[16];
         _itoa_s(i + 1, rankBuf, 10);
-        font_draw_str(app, 4, y, rankBuf, COL_UI_YELLOW);
-        font_draw_str(app, 4 + 4 * FONT_CHAR_W, y, ".  ", COL_UI_TEXT);
-        font_draw_str(app, 4 + 7 * FONT_CHAR_W, y, entries[i].name, COL_UI_TEXT);
         char scoreBuf[32];
         _itoa_s(entries[i].score, scoreBuf, 10);
-        font_draw_str(app, app->playWidth - 12 * FONT_CHAR_W, y, scoreBuf, COL_UI_YELLOW);
+
+        // Формируем строку: "  1.  PlayerName              12345"
+        char line[128];
+        _snprintf_s(line, sizeof(line), _TRUNCATE, "%2d.  %-24s  %s", i + 1, entries[i].name, scoreBuf);
+        renderer_draw_str(app, 4, y, line, (i == app->menuSelection) ? COL_MENU_SEL : COL_UI_TEXT);
     }
 
     if (count == 0) {
-        font_draw_str(app, app->playWidth / 2 - 5 * FONT_CHAR_W, app->playHeight / 2, "NO SCORES YET", COL_UI_TEXT);
+        renderer_draw_str(app, app->playWidth / 2 - 5, app->playHeight / 2, "NO SCORES YET", COL_UI_TEXT);
     }
 
-    font_draw_str(app, app->playWidth / 2 - 9 * FONT_CHAR_W, app->playHeight - 3 - (FONT_CHAR_H + 1), "PRESS ESC TO RETURN", COL_UI_TEXT);
+    const char* hint = "PRESS ESC TO RETURN";
+    renderer_draw_str(app, app->playWidth / 2 - static_cast<int>(strlen(hint)) / 2, app->playHeight - 3, hint, COL_UI_TEXT);
 }
 
 void renderer_draw_saves(AppState* app) {
     renderer_clear(app, COL_MENU_BG);
     renderer_draw_frame(app);
 
-    font_draw_str(app, app->playWidth / 2 - 6 * FONT_CHAR_W, 2, "SAVED GAMES", COL_MENU_SEL);
+    const char* title = "SAVED GAMES";
+    renderer_draw_str(app, app->playWidth / 2 - static_cast<int>(strlen(title)) / 2, 2, title, COL_MENU_SEL);
 
     SaveSlot saves[MAX_SAVES];
     int count = saves_get_list(app, saves, MAX_SAVES);
 
     if (count == 0) {
-        font_draw_str(app, app->playWidth / 2 - 6 * FONT_CHAR_W, app->playHeight / 2, "NO SAVES FOUND", COL_UI_TEXT);
+        const char* msg = "NO SAVES FOUND";
+        renderer_draw_str(app, app->playWidth / 2 - static_cast<int>(strlen(msg)) / 2, app->playHeight / 2, msg, COL_UI_TEXT);
     } else {
-        font_draw_str(app, 4, 4 + FONT_CHAR_H + 1, "SEL  DATE       TIME     MODE     SCORE", COL_UI_TEXT);
+        const char* header = "SEL  DATE       TIME     MODE     SCORE";
+        renderer_draw_str(app, 4, 4, header, COL_UI_TEXT);
 
         for (int i = 0; i < count; ++i) {
             FILETIME ft;
@@ -486,12 +572,13 @@ void renderer_draw_saves(AppState* app) {
                 i, st.wDay, st.wMonth, st.wYear, st.wHour, st.wMinute, modeStr, saves[i].player.score);
 
             WORD color = (i == app->menuSelection) ? COL_MENU_SEL : COL_UI_TEXT;
-            int y = 6 + i * (FONT_CHAR_H + 1);
-            font_draw_str(app, 4, y, buffer, color);
+            int y = 6 + i;
+            renderer_draw_str(app, 4, y, buffer, color);
         }
     }
 
-    font_draw_str(app, app->playWidth / 2 - 12 * FONT_CHAR_W, app->playHeight - 3 - (FONT_CHAR_H + 1), "ENTER: LOAD  DEL: DELETE  ESC: BACK", COL_UI_TEXT);
+    const char* hint = "ENTER: LOAD  DEL: DELETE  ESC: BACK";
+    renderer_draw_str(app, app->playWidth / 2 - static_cast<int>(strlen(hint)) / 2, app->playHeight - 3, hint, COL_UI_TEXT);
 }
 
 extern char g_nameInput[MAX_NAME_LEN];
@@ -501,16 +588,25 @@ void renderer_draw_change_name(AppState* app) {
     renderer_clear(app, COL_MENU_BG);
     renderer_draw_frame(app);
 
-    font_draw_str(app, app->playWidth / 2 - 5 * FONT_CHAR_W, app->playHeight / 2 - 3 * (FONT_CHAR_H + 1), "CHANGE NAME", COL_MENU_SEL);
-    font_draw_str(app, app->playWidth / 2 - 10 * FONT_CHAR_W, app->playHeight / 2 - (FONT_CHAR_H + 1), "CURRENT: ", COL_UI_TEXT);
-    font_draw_str(app, app->playWidth / 2 + 1 * FONT_CHAR_W, app->playHeight / 2 - (FONT_CHAR_H + 1), app->playerName, COL_MENU_SEL);
-    font_draw_str(app, app->playWidth / 2 - 10 * FONT_CHAR_W, app->playHeight / 2 + (FONT_CHAR_H + 1), "NEW: ", COL_UI_TEXT);
-    font_draw_str(app, app->playWidth / 2 + 1 * FONT_CHAR_W, app->playHeight / 2 + (FONT_CHAR_H + 1), g_nameInput, COL_UI_TEXT);
-    // Показываем курсор
-    int cursorX = app->playWidth / 2 + 1 * FONT_CHAR_W + g_nameInputLen * (FONT_CHAR_W + 1);
-    int cursorY = app->playHeight / 2 + (FONT_CHAR_H + 1);
-    font_draw_char(app, cursorX, cursorY, '_', COL_MENU_SEL);
-    font_draw_str(app, app->playWidth / 2 - 16 * FONT_CHAR_W, app->playHeight / 2 + 3 * (FONT_CHAR_H + 1), "TYPE NAME AND PRESS ENTER, ESC TO CANCEL", COL_UI_TEXT);
+    int centerY = app->playHeight / 2;
+
+    const char* title = "CHANGE NAME";
+    renderer_draw_str(app, app->playWidth / 2 - static_cast<int>(strlen(title)) / 2, centerY - 4, title, COL_MENU_SEL);
+
+    const char* currLabel = "CURRENT: ";
+    renderer_draw_str(app, app->playWidth / 2 - 10, centerY - 2, currLabel, COL_UI_TEXT);
+    renderer_draw_str(app, app->playWidth / 2 + 1, centerY - 2, app->playerName, COL_MENU_SEL);
+
+    const char* newLabel = "NEW: ";
+    renderer_draw_str(app, app->playWidth / 2 - 10, centerY, newLabel, COL_UI_TEXT);
+    renderer_draw_str(app, app->playWidth / 2 + 1, centerY, g_nameInput, COL_UI_TEXT);
+
+    // Курсор подчеркиванием
+    int cursorX = app->playWidth / 2 + 1 + g_nameInputLen;
+    renderer_draw_char(app, cursorX, centerY, '_', COL_MENU_SEL);
+
+    const char* hint = "TYPE NAME AND PRESS ENTER, ESC TO CANCEL";
+    renderer_draw_str(app, app->playWidth / 2 - static_cast<int>(strlen(hint)) / 2, centerY + 3, hint, COL_UI_TEXT);
 }
 
 void renderer_draw_save_preview(AppState* app) {
@@ -522,7 +618,8 @@ void renderer_draw_save_preview(AppState* app) {
     renderer_draw_powerups(app);
     renderer_draw_ui(app);
 
-    font_draw_str(app, app->playWidth / 2 - 12 * FONT_CHAR_W, app->playHeight / 2, "PRESS ANY KEY TO RESUME...", COL_MENU_SEL);
+    const char* msg = "PRESS ANY KEY TO RESUME...";
+    renderer_draw_str(app, app->playWidth / 2 - static_cast<int>(strlen(msg)) / 2, app->playHeight / 2, msg, COL_MENU_SEL);
 }
 
 void renderer_present(AppState* app) {

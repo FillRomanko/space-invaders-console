@@ -144,6 +144,9 @@ int main() {
             }
         }
 
+        // Обновление шрифта консоли (меню/игра) — ДО рендеринга, чтобы не было мерцания
+        renderer_update_font(&app);
+
         // Рендеринг
         renderer_clear(&app, COL_GAME_BG);
         renderer_draw_frame(&app);

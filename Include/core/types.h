@@ -304,6 +304,9 @@ struct AppState {
 
     // Флаг выхода из программы
     uint8_t shouldExit;
+
+    // Текущий режим шрифта консоли (для отслеживания смены меню/игра)
+    uint8_t currentFontMode; // 0 = FONT_MODE_MENU, 1 = FONT_MODE_GAME
 };
 
 #endif // SPACE_INVADERS_TYPES_H
