@@ -5,6 +5,7 @@
 #include "../../Include/core/save_system.h"
 #include "../../Include/core/leaderboard.h"
 #include "../../Include/core/input.h"
+#include "../../Include/core/renderer.h"
 #include <cstring>
 #include <cstdio>
 
@@ -66,17 +67,20 @@ void menu_handle_main(AppState* app, const InputState* input) {
                 app->menuState = MENU_HIGHSCORES;
                 app->menuSelection = 0;
                 app->menuItemCount = 1; // только выход
+                renderer_set_font_mode(app, true); // крупный шрифт
                 break;
             case MAIN_SAVES:
                 app->menuState = MENU_SAVES;
                 app->menuSelection = 0;
                 // menuItemCount обновится в saves_get_list
+                renderer_set_font_mode(app, true); // крупный шрифт
                 break;
             case MAIN_CHANGE_NAME:
                 app->menuState = MENU_CHANGE_NAME;
                 app->menuSelection = 0;
                 g_nameInputLen = 0;
                 memset(g_nameInput, 0, MAX_NAME_LEN);
+                renderer_set_font_mode(app, true); // крупный шрифт
                 break;
             case MAIN_EXIT:
                 app->shouldExit = 1;
@@ -183,6 +187,8 @@ void menu_handle_saves(AppState* app, const InputState* input) {
         if (saves_load_slot(app, app->menuSelection)) {
             // Игра запустится из превью в game_tick
             app->game.show_save_preview = 1;
+            // Переход в игру -> мелкий шрифт
+            renderer_set_font_mode(app, false);
         }
     }
 

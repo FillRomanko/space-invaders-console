@@ -5,6 +5,7 @@
 #include "../../Include/core/audio.h"
 #include "../../Include/core/save_system.h"
 #include "../../Include/core/leaderboard.h"
+#include "../../Include/core/renderer.h"
 #include <windows.h>
 #include <cstdlib>
 #include <ctime>
@@ -629,10 +630,14 @@ void game_toggle_pause(AppState* app) {
     GameState* gs = &app->game;
 
     if (gs->paused) {
+        // Resume -> мелкий шрифт (игра)
+        renderer_set_font_mode(app, false);
         gs->paused = 0;
         gs->in_menu = 0;
         audio_play_music(app, MUS_GAME_1);
     } else {
+        // Pause -> мелкий шрифт (пауза использует игровой шрифт)
+        renderer_set_font_mode(app, false);
         gs->paused = 1;
         gs->in_menu = 1;
         app->menuState = MENU_PAUSE;
@@ -658,8 +663,13 @@ void game_exit_to_menu(AppState* app) {
     app->menuState = MENU_MAIN;
     app->menuSelection = 0;
     app->menuItemCount = MAIN_COUNT;
+
+    // Главное меню -> крупный шрифт
+    renderer_set_font_mode(app, true);
 }
 
 void game_start(AppState* app, GameMode mode) {
     game_init_new(app, mode);
+    // Игра -> мелкий шрифт
+    renderer_set_font_mode(app, false);
 }

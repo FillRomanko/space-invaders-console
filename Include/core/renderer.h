@@ -85,9 +85,9 @@ void renderer_present(AppState* app);
 // Получение указателя на текущий буфер для прямого доступа
 CHAR_INFO* renderer_get_buffer(AppState* app);
 
-// Обновление шрифта консоли в зависимости от режима (меню/игра).
-// Вызывать в начале кадра ДО renderer_clear.
-// Меняет шрифт на ОБОИХ буферах, пересчитывает playWidth/playHeight/offsetX/offsetY.
-void renderer_update_font(AppState* app);
+// Явная установка режима шрифта (вызывать ТОЛЬКО при смене состояния меню/игры).
+// isLargeFont = true -> крупный шрифт для меню (MENU_MAIN, HIGHSCORES, SAVES, CHANGE_NAME, GAME_OVER)
+// isLargeFont = false -> мелкий шрифт для игры и паузы
+void renderer_set_font_mode(AppState* app, bool isLargeFont);
 
 #endif // SPACE_INVADERS_RENDERER_H

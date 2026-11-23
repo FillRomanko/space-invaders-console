@@ -86,6 +86,12 @@ int main() {
     app.game.mode = MODE_NORMAL;
     app.shouldExit = 0;
 
+    // Initialize font mode tracking: InitializeConsole sets up small (game) font (FONT_MODE_GAME = 1).
+    app.currentFontMode = 1; // win32_console::FONT_MODE_GAME
+
+    // Главное меню -> крупный шрифт (явный вызов)
+    renderer_set_font_mode(&app, true);
+
     // Запускаем музыку меню
     audio_play_music(&app, MUS_MENU_1);
 
@@ -141,11 +147,10 @@ int main() {
                 app.menuItemCount = GO_COUNT;
                 app.game.in_menu = 1;
                 audio_stop_music(&app);
+                // Game Over экран -> крупный шрифт
+                renderer_set_font_mode(&app, true);
             }
         }
-
-        // Обновление шрифта консоли (меню/игра) — ДО рендеринга, чтобы не было мерцания
-        renderer_update_font(&app);
 
         // Рендеринг
         renderer_clear(&app, COL_GAME_BG);

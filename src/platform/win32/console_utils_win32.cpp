@@ -43,6 +43,19 @@ static bool ApplyFontToBuffer(HANDLE hBuffer, win32_console::FontMode mode, int*
         return false;
     }
 
+    // ВАЖНО: чтобы изменить размер буфера (увеличить ИЛИ уменьшить),
+    // нужно СНАЧАЛА уменьшить окно до минимума (1x1),
+    // потом изменить буфер, потом установить окно в новый максимум.
+    // Иначе SetConsoleScreenBufferSize вернёт ошибку, если новый буфер меньше текущего окна.
+    SMALL_RECT minWindow = { 0, 0, 0, 0 };
+    SetConsoleWindowInfo(hBuffer, TRUE, &minWindow);
+
+    // Меняем размер буфера под новый максимум
+    COORD newBufferSize = maxWindow;
+    if (!SetConsoleScreenBufferSize(hBuffer, newBufferSize)) {
+        return false;
+    }
+
     // Устанавливаем окно на максимальный доступный размер
     SMALL_RECT windowRect = { 0, 0, static_cast<SHORT>(maxWindow.X - 1), static_cast<SHORT>(maxWindow.Y - 1) };
     if (!SetConsoleWindowInfo(hBuffer, TRUE, &windowRect)) {
@@ -189,4 +202,39 @@ bool console_utils::InitializeConsole(int cols, int rows) {
 
 bool win32_console::SetConsoleFontMode(HANDLE hBuffer, FontMode mode, int* outCols, int* outRows) {
     return ApplyFontToBuffer(hBuffer, mode, outCols, outRows);
+}
+
+// Только смена шрифта БЕЗ ресайза окна/буфера (для вторичного буфера двойной буферизации).
+bool win32_console::SetConsoleFontOnly(HANDLE hBuffer, FontMode mode) {
+    CONSOLE_FONT_INFOEX font{};
+    font.cbSize = sizeof(font);
+    font.nFont = 0;
+    font.FontFamily = FF_DONTCARE;
+    font.FontWeight = FW_NORMAL;
+
+    if (mode == FONT_MODE_MENU) {
+        font.dwFontSize.X = 10;
+        font.dwFontSize.Y = 20;
+        wcscpy_s(font.FaceName, L"Consolas");
+    } else {
+        font.dwFontSize.X = 4;
+        font.dwFontSize.Y = 8;
+        wcscpy_s(font.FaceName, L"Terminal");
+    }
+
+    if (!SetCurrentConsoleFontEx(hBuffer, FALSE, &font)) {
+        // Фоллбэк: Consolas
+        if (mode == FONT_MODE_MENU) {
+            font.dwFontSize.X = 8;
+            font.dwFontSize.Y = 16;
+        } else {
+            font.dwFontSize.X = 5;
+            font.dwFontSize.Y = 8;
+        }
+        wcscpy_s(font.FaceName, L"Consolas");
+        if (!SetCurrentConsoleFontEx(hBuffer, FALSE, &font)) {
+            return false;
+        }
+    }
+    return true;
 }

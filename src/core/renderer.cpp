@@ -26,8 +26,30 @@ static int g_backBufferHeight = 0;
 // Вызывать в начале кадра ДО renderer_clear.
 // Меняет шрифт на ОБОИХ буферах, пересчитывает playWidth/playHeight/offsetX/offsetY.
 void renderer_update_font(AppState* app) {
-    // Определяем желаемый режим шрифта
-    win32_console::FontMode desiredMode = app->game.in_menu ? win32_console::FONT_MODE_MENU : win32_console::FONT_MODE_GAME;
+    // Определяем желаемый режим шрифта.
+    // Крупный шрифт (FONT_MODE_MENU) — только для "настоящих" меню.
+    // Пауза (MENU_PAUSE) и геймплей — мелкий шрифт (FONT_MODE_GAME).
+    bool isLargeFontMenu = false;
+    if (app->game.in_menu) {
+        switch (app->menuState) {
+            case MENU_MAIN:
+            case MENU_HIGHSCORES:
+            case MENU_SAVES:
+            case MENU_CHANGE_NAME:
+            case MENU_GAME_OVER:
+                isLargeFontMenu = true;
+                break;
+            case MENU_PAUSE:
+            case MENU_PLAY_NORMAL:
+            case MENU_PLAY_DEFENSE:
+            case MENU_EXIT:
+            default:
+                isLargeFontMenu = false;
+                break;
+        }
+    }
+
+    win32_console::FontMode desiredMode = isLargeFontMenu ? win32_console::FONT_MODE_MENU : win32_console::FONT_MODE_GAME;
 
     // Если режим не менялся — ничего не делаем
     if (app->currentFontMode == static_cast<uint8_t>(desiredMode)) {
@@ -41,6 +63,56 @@ void renderer_update_font(AppState* app) {
 
     if (!ok0 || !ok1) {
         // Не удалось сменить шрифт — остаёмся в старом режиме
+        return;
+    }
+
+    // Обновляем размеры в AppState
+    app->consoleWidth = newCols;
+    app->consoleHeight = newRows;
+
+    // Игровая область = окно минус рамка (2 символа по горизонтали и вертикали)
+    int actualPlayWidth = newCols - 2;
+    int actualPlayHeight = newRows - 2;
+    if (actualPlayWidth < 10) actualPlayWidth = 10;
+    if (actualPlayHeight < 10) actualPlayHeight = 10;
+
+    app->offsetX = 1;
+    app->offsetY = 1;
+    app->playWidth = actualPlayWidth;
+    app->playHeight = actualPlayHeight;
+
+    // Синхронизируем GameState
+    app->game.play_width = actualPlayWidth;
+    app->game.play_height = actualPlayHeight;
+    app->game.offset_x = 1;
+    app->game.offset_y = 1;
+
+    // Пересоздаём бэк-буфер в памяти под новый размер
+    delete[] g_backBuffer;
+    g_backBufferWidth = newCols;
+    g_backBufferHeight = newRows;
+    g_backBuffer = new CHAR_INFO[g_backBufferWidth * g_backBufferHeight];
+
+    // Запоминаем текущий режим
+    app->currentFontMode = static_cast<uint8_t>(desiredMode);
+}
+
+// Явная установка режима шрифта (вызывать ТОЛЬКО при смене состояния меню/игры).
+// isLargeFont = true -> крупный шрифт для меню (MENU_MAIN, HIGHSCORES, SAVES, CHANGE_NAME, GAME_OVER)
+// isLargeFont = false -> мелкий шрифт для игры и паузы
+void renderer_set_font_mode(AppState* app, bool isLargeFont) {
+    win32_console::FontMode desiredMode = isLargeFont ? win32_console::FONT_MODE_MENU : win32_console::FONT_MODE_GAME;
+
+    // Если режим не менялся — ничего не делаем
+    if (app->currentFontMode == static_cast<uint8_t>(desiredMode)) {
+        return;
+    }
+
+    // Один консольный буфер — меняем шрифт на нём с ресайзом окна
+    int newCols = 0, newRows = 0;
+    bool ok = win32_console::SetConsoleFontMode(app->hConsole, desiredMode, &newCols, &newRows);
+
+    if (!ok) {
         return;
     }
 
@@ -153,26 +225,15 @@ void font_draw_menu(AppState* app, int x, int y, const char* items[], int count,
 // ============================================================
 
 bool renderer_init(AppState* app) {
-    // Создаем второй консольный буфер для двойной буферизации
+    // Используем ТОЛЬКО ОДИН консольный буфер (hConsole).
+    // Двойная буферизация делается в памяти (g_backBuffer).
     app->hBuffer[0] = app->hConsole;
-    app->hBuffer[1] = CreateConsoleScreenBuffer(
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        NULL,
-        CONSOLE_TEXTMODE_BUFFER,
-        NULL
-    );
-
-    if (app->hBuffer[1] == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-
+    app->hBuffer[1] = nullptr; // не используется
     app->activeBuffer = 0;
 
-    // Скрываем курсор в обоих буферах
+    // Скрываем курсор
     CONSOLE_CURSOR_INFO cursorInfo = {1, FALSE};
-    SetConsoleCursorInfo(app->hBuffer[0], &cursorInfo);
-    SetConsoleCursorInfo(app->hBuffer[1], &cursorInfo);
+    SetConsoleCursorInfo(app->hConsole, &cursorInfo);
 
     // Выделяем системный бэк-буфер в памяти
     CONSOLE_SCREEN_BUFFER_INFO info;
@@ -623,15 +684,12 @@ void renderer_draw_save_preview(AppState* app) {
 }
 
 void renderer_present(AppState* app) {
-    HANDLE hBuf = app->hBuffer[app->activeBuffer];
+    // Один буфер — без переключения
+    HANDLE hBuf = app->hConsole;
 
     COORD bufSize = { static_cast<SHORT>(g_backBufferWidth), static_cast<SHORT>(g_backBufferHeight) };
     COORD bufCoord = { 0, 0 };
     SMALL_RECT writeRegion = { 0, 0, static_cast<SHORT>(g_backBufferWidth - 1), static_cast<SHORT>(g_backBufferHeight - 1) };
 
     WriteConsoleOutputA(hBuf, g_backBuffer, bufSize, bufCoord, &writeRegion);
-
-    // Переключаем активный буфер
-    SetConsoleActiveScreenBuffer(hBuf);
-    app->activeBuffer = 1 - app->activeBuffer;
 }
