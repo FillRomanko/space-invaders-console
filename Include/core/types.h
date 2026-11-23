@@ -158,6 +158,7 @@ struct Player {
     uint16_t triple_straight_timer; // тики до конца (0 = нет)
     uint16_t triple_diagonal_timer; // тики до конца
     uint32_t score;
+    uint8_t shoot_cooldown;     // кулдаун стрельбы (в кадрах)
 };
 
 // Спрайт ASCII шрифта (6x6 на символ)

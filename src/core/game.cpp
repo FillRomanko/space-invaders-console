@@ -52,6 +52,7 @@ void game_init_new(AppState* app, GameMode mode) {
     gs->player.hp = 3;
     gs->player.max_hp = 3;
     gs->player.score = 0;
+    gs->player.shoot_cooldown = 0;
     strncpy_s(gs->player_name, app->playerName, MAX_NAME_LEN);
 
     // Враги
@@ -96,6 +97,7 @@ void game_init_new(AppState* app, GameMode mode) {
 void game_init_from_save(AppState* app, const SaveSlot* /*save*/) {
     // Состояние уже восстановлено в saves_load_slot
     // Здесь только доп. инициализация
+    app->game.player.shoot_cooldown = 0;
     app->autosaveTimer = 60;
     audio_play_music(app, MUS_GAME_1);
 }
@@ -123,6 +125,9 @@ void game_tick(AppState* app, const InputState* input, float /*dt*/) {
     }
     if (gs->player.triple_diagonal_timer > 0) {
         gs->player.triple_diagonal_timer--;
+    }
+    if (gs->player.shoot_cooldown > 0) {
+        gs->player.shoot_cooldown--;
     }
 
     // Очки за выживание (1 очко в секунду)
@@ -165,9 +170,12 @@ void game_tick(AppState* app, const InputState* input, float /*dt*/) {
     gs->player.x = static_cast<int16_t>(newX);
     gs->player.y = static_cast<int16_t>(newY);
 
-    // Стрельба - проверка нажатия в текущем кадре
-    if (input_is_pressed(input, KEY_SPACE) || input->mouse_left) {
+    // Стрельба - зажатый пробел/ЛКМ с кулдауном (как движение — на key_held)
+    // FIRE_RATE = кадры между выстрелами (60 FPS / 20 = 3 выстрелов в сек = 20 выстрелов/сек)
+    constexpr uint8_t FIRE_RATE = 3;
+    if ((input_is_held(input, KEY_SPACE) || input->mouse_left) && gs->player.shoot_cooldown == 0) {
         game_player_shoot(app);
+        gs->player.shoot_cooldown = FIRE_RATE;
     }
 
     // Пауза
@@ -613,6 +621,7 @@ void game_player_death(AppState* app) {
         gs->player.y = static_cast<int16_t>(gs->play_height - 5);
         gs->player.shield_active = 0;
         gs->player.shield_hitbox_extra = 0;
+        gs->player.shoot_cooldown = 0;
     }
 }
 
