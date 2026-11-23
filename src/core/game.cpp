@@ -669,7 +669,8 @@ void game_exit_to_menu(AppState* app) {
 }
 
 void game_start(AppState* app, GameMode mode) {
-    game_init_new(app, mode);
-    // Игра -> мелкий шрифт
+    // Сначала меняем шрифт на игровой (мелкий) — это обновит playWidth/playHeight
     renderer_set_font_mode(app, false);
+    // Потом инициализируем игру — игрок встанет в правильный центр по НОВЫМ размерам
+    game_init_new(app, mode);
 }
